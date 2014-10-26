@@ -65,19 +65,17 @@ func SkipTestVisitorAction(f *ast.FuncDecl) {
 	f.Body.List = newBodyList
 }
 
-func UnskipTestVisitorAction(fileSet *token.FileSet) func(*ast.FuncDecl) {
-	return func(f *ast.FuncDecl) {
-		testingParamName := f.Type.Params.List[0].Names[0].Name
-		skipTestString := fmt.Sprintf("%s.Skip()", testingParamName)
-		var buffer bytes.Buffer
-		printer.Fprint(&buffer, fileSet, f.Body.List[0])
-		if buffer.String() == skipTestString {
-			newBodyList := make([]ast.Stmt, len(f.Body.List)-1)
-			for i, _ := range newBodyList {
-				newBodyList[i] = f.Body.List[i+1]
-			}
-			f.Body.List = newBodyList
+func UnskipTestVisitorAction(f *ast.FuncDecl) {
+	testingParamName := f.Type.Params.List[0].Names[0].Name
+	skipTestString := fmt.Sprintf("%s.Skip()", testingParamName)
+	var buffer bytes.Buffer
+	printer.Fprint(&buffer, token.NewFileSet(), f.Body.List[0])
+	if buffer.String() == skipTestString {
+		newBodyList := make([]ast.Stmt, len(f.Body.List)-1)
+		for i, _ := range newBodyList {
+			newBodyList[i] = f.Body.List[i+1]
 		}
+		f.Body.List = newBodyList
 	}
 }
 
@@ -90,6 +88,14 @@ func usage() {
 func main() {
 	flag.Usage = usage
 	flag.Parse()
+
+	var visitAction func(*ast.FuncDecl)
+	if *unskip {
+		visitAction = UnskipTestVisitorAction
+	} else {
+		visitAction = SkipTestVisitorAction
+	}
+
 	for i := 0; i < flag.NArg(); i++ {
 		path := flag.Arg(i)
 		switch dir, err := os.Stat(path); {
@@ -98,7 +104,22 @@ func main() {
 		case dir.IsDir():
 			walkDir(path)
 		default:
-			walkFile(path)
+			var buffer bytes.Buffer
+			if err := walkFile(path, &buffer, visitAction); err != nil {
+				report(err)
+			} else {
+				if *write {
+					err = ioutil.WriteFile(path, buffer.Bytes(), 0)
+					if err != nil {
+						report(err)
+					}
+				} else {
+					_, err = io.Copy(os.Stdout, &buffer)
+					if err != nil {
+						report(err)
+					}
+				}
+			}
 		}
 	}
 	os.Exit(exitCode)
@@ -111,33 +132,13 @@ func report(err error) {
 
 func walkDir(path string) {}
 
-func walkFile(path string) {
+func walkFile(path string, output io.Writer, visitAction func(*ast.FuncDecl)) error {
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, path, nil, parser.ParseComments)
 	if err != nil {
-		report(err)
-		return
-	}
-	var visitAction func(*ast.FuncDecl)
-	if *unskip {
-		visitAction = UnskipTestVisitorAction(fileSet)
-	} else {
-		visitAction = SkipTestVisitorAction
+		return err
 	}
 	ast.Walk(NewTestFuncVisitor(fileSet, visitAction), file)
-	var buffer bytes.Buffer
-	printer.Fprint(&buffer, fileSet, file)
-	if *write {
-		err = ioutil.WriteFile(path, buffer.Bytes(), 0)
-		if err != nil {
-			report(err)
-			return
-		}
-	} else {
-		_, err = io.Copy(os.Stdout, &buffer)
-		if err != nil {
-			report(err)
-			return
-		}
-	}
+	printer.Fprint(output, fileSet, file)
+	return nil
 }

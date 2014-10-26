@@ -6,6 +6,8 @@ import (
 	"go/parser"
 	"go/printer"
 	"go/token"
+	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 )
@@ -138,7 +140,7 @@ func TestUnskipTestVisitorAction(t *testing.T) {
 		}
 	}
 
-	UnskipTestVisitorAction(fileSet)(funcDecl)
+	UnskipTestVisitorAction(funcDecl)
 
 	var buffer bytes.Buffer
 	printer.Fprint(&buffer, fileSet, file)
@@ -160,4 +162,56 @@ func TestUnskipTestVisitorAction(t *testing.T) {
 	if expected != actual {
 		t.Fatalf("Expected \n`%s`\n\n, got \n`%s`\n", expected, actual)
 	}
+}
+
+func TestWalkFile(t *testing.T) {
+	src := `
+	package main
+
+	import "fmt"
+
+	func TestFoo(t *testing.T) {
+		s := "foo"
+		fmt.Println(s)
+	}`
+	visitAction := func(f *ast.FuncDecl) {
+		name := ast.NewIdent("TestBar")
+		f.Name = name
+	}
+
+	tmpFilePath := "tempFile.go"
+	err := ioutil.WriteFile(tmpFilePath, []byte(src), 0777)
+	if err != nil {
+		panic(err)
+	}
+	defer os.Remove(tmpFilePath)
+
+	var buffer bytes.Buffer
+
+	err = walkFile(tmpFilePath, &buffer, visitAction)
+
+	if err != nil {
+		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
+	}
+
+	expected := `
+	package main
+
+	import "fmt"
+
+	func TestBar(t *testing.T) {
+		s := "foo"
+		fmt.Println(s)
+	}`
+	replacer := strings.NewReplacer("\n", "", "\t", "", " ", "")
+	expected = replacer.Replace(expected)
+	actual := replacer.Replace(buffer.String())
+
+	if expected != actual {
+		t.Fatalf("Expected \n`%s`\n\n, got \n`%s`\n", expected, actual)
+	}
+
+	// No real path
+	buffer.Reset()
+	err = walkFile("foobar.go", &buffer, visitAction)
 }
