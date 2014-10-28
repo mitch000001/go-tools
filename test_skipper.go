@@ -22,7 +22,6 @@ var (
 )
 
 type TestFuncVisitor struct {
-	FileSet     *token.FileSet
 	visitAction func(*ast.FuncDecl)
 }
 
@@ -32,7 +31,7 @@ func (f TestFuncVisitor) Visit(node ast.Node) ast.Visitor {
 			if len(funcDecl.Type.Params.List) == 1 {
 				param := funcDecl.Type.Params.List[0]
 				var buffer bytes.Buffer
-				printer.Fprint(&buffer, f.FileSet, param.Type)
+				printer.Fprint(&buffer, token.NewFileSet(), param.Type)
 				if "*testing.T" == buffer.String() {
 					f.visitAction(funcDecl)
 					return nil
@@ -43,11 +42,11 @@ func (f TestFuncVisitor) Visit(node ast.Node) ast.Visitor {
 	return f
 }
 
-func NewTestFuncVisitor(fileSet *token.FileSet, visitAction func(*ast.FuncDecl)) ast.Visitor {
+func NewTestFuncVisitor(visitAction func(*ast.FuncDecl)) ast.Visitor {
 	if visitAction == nil {
 		visitAction = func(*ast.FuncDecl) {}
 	}
-	return &TestFuncVisitor{FileSet: fileSet, visitAction: visitAction}
+	return &TestFuncVisitor{visitAction: visitAction}
 }
 
 func SkipTestVisitorAction(f *ast.FuncDecl) {
@@ -105,7 +104,8 @@ func main() {
 			walkDir(path)
 		default:
 			var buffer bytes.Buffer
-			if err := walkFile(path, &buffer, visitAction); err != nil {
+			testFuncVisitor := NewTestFuncVisitor(visitAction)
+			if err := walkFile(path, &buffer, testFuncVisitor); err != nil {
 				report(err)
 			} else {
 				if *write {
@@ -132,13 +132,13 @@ func report(err error) {
 
 func walkDir(path string) {}
 
-func walkFile(path string, output io.Writer, visitAction func(*ast.FuncDecl)) error {
+func walkFile(path string, output io.Writer, visitor ast.Visitor) error {
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, path, nil, parser.ParseComments)
 	if err != nil {
 		return err
 	}
-	ast.Walk(NewTestFuncVisitor(fileSet, visitAction), file)
+	ast.Walk(visitor, file)
 	printer.Fprint(output, fileSet, file)
 	return nil
 }

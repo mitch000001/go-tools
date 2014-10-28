@@ -33,7 +33,7 @@ func TestTestFuncVisitor(t *testing.T) {
 		printer.Fprint(&buffer, fileSet, f)
 	}
 
-	ast.Walk(TestFuncVisitor{FileSet: fileSet, visitAction: visitAction}, file)
+	ast.Walk(TestFuncVisitor{visitAction: visitAction}, file)
 
 	expected := "func Test(*testing.T) {}"
 	actual := strings.Replace(strings.Trim(buffer.String(), " \t\n"), "\t", " ", -1)
@@ -44,10 +44,8 @@ func TestTestFuncVisitor(t *testing.T) {
 }
 
 func TestNewTestFuncVisitor(t *testing.T) {
-	fileSet := token.NewFileSet()
-
 	// With no visitAction func
-	visitor := NewTestFuncVisitor(fileSet, nil)
+	visitor := NewTestFuncVisitor(nil)
 
 	if visitor.(*TestFuncVisitor).visitAction == nil {
 		t.Fatalf("Expected visitAction to not be nil")
@@ -58,7 +56,7 @@ func TestNewTestFuncVisitor(t *testing.T) {
 		actual = "called"
 	}
 
-	visitor = NewTestFuncVisitor(fileSet, visitAction)
+	visitor = NewTestFuncVisitor(visitAction)
 	visitor.(*TestFuncVisitor).visitAction(&ast.FuncDecl{})
 
 	if actual != "called" {
@@ -164,6 +162,17 @@ func TestUnskipTestVisitorAction(t *testing.T) {
 	}
 }
 
+type visitor struct{}
+
+func (v visitor) Visit(node ast.Node) ast.Visitor {
+	if f, ok := node.(*ast.FuncDecl); ok {
+		name := ast.NewIdent("TestBar")
+		f.Name = name
+		return nil
+	}
+	return v
+}
+
 func TestWalkFile(t *testing.T) {
 	src := `
 	package main
@@ -174,10 +183,6 @@ func TestWalkFile(t *testing.T) {
 		s := "foo"
 		fmt.Println(s)
 	}`
-	visitAction := func(f *ast.FuncDecl) {
-		name := ast.NewIdent("TestBar")
-		f.Name = name
-	}
 
 	tmpFilePath := "tempFile.go"
 	err := ioutil.WriteFile(tmpFilePath, []byte(src), 0777)
@@ -188,7 +193,7 @@ func TestWalkFile(t *testing.T) {
 
 	var buffer bytes.Buffer
 
-	err = walkFile(tmpFilePath, &buffer, visitAction)
+	err = walkFile(tmpFilePath, &buffer, &visitor{})
 
 	if err != nil {
 		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
@@ -213,5 +218,5 @@ func TestWalkFile(t *testing.T) {
 
 	// No real path
 	buffer.Reset()
-	err = walkFile("foobar.go", &buffer, visitAction)
+	err = walkFile("foobar.go", &buffer, &visitor{})
 }
