@@ -8,6 +8,7 @@ import (
 	"go/token"
 	"io/ioutil"
 	"os"
+	"path"
 	"strings"
 	"testing"
 )
@@ -219,4 +220,87 @@ func TestWalkFile(t *testing.T) {
 	// No real path
 	buffer.Reset()
 	err = walkFile("foobar.go", &buffer, &visitor{})
+	if err == nil {
+		t.Fatal("Expected an error")
+	}
+}
+
+func TestWalkDir(t *testing.T) {
+	src := `
+	package main
+
+	import "fmt"
+
+	func TestFoo(t *testing.T) {
+		s := "foo"
+		fmt.Println(s)
+	}`
+	src2 := `
+	package main
+
+	import "fmt"
+
+	func TestBaz(t *testing.T) {
+		s := "foo"
+		fmt.Println(s)
+	}`
+
+	tmpDir := "foo"
+	tmpFilePath := "tempFile.go"
+	tmpFilePath2 := "tempFile2.go"
+	err := os.Mkdir(tmpDir, 0777)
+	err = ioutil.WriteFile(path.Join(tmpDir, tmpFilePath), []byte(src), 0777)
+	if err != nil {
+		panic(err)
+	}
+	err = ioutil.WriteFile(path.Join(tmpDir, tmpFilePath2), []byte(src2), 0777)
+	if err != nil {
+		panic(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	output := NewOutputStrategy()
+
+	err = walkDir(tmpDir, output, &visitor{})
+
+	if err != nil {
+		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
+	}
+
+	replacer := strings.NewReplacer("\n", "", "\t", "", " ", "")
+
+	var actual string
+	for _, buffer := range output.pathWriters {
+		actual = actual + replacer.Replace(buffer.String())
+	}
+
+	expected := `
+	package main
+
+	import "fmt"
+
+	func TestBar(t *testing.T) {
+		s := "foo"
+		fmt.Println(s)
+	}
+	package main
+
+	import "fmt"
+
+	func TestBar(t *testing.T) {
+		s := "foo"
+		fmt.Println(s)
+	}`
+	expected = replacer.Replace(expected)
+
+	if expected != actual {
+		t.Fatalf("Expected \n`%s`\n\n, got \n`%s`\n", expected, actual)
+	}
+
+	// No real path
+	output = NewOutputStrategy()
+	err = walkDir("foobar", output, &visitor{})
+	if err == nil {
+		t.Fatal("Expected an error")
+	}
 }

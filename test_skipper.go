@@ -82,6 +82,12 @@ type OutputStrategy struct {
 	pathWriters map[string]*bytes.Buffer
 }
 
+func NewOutputStrategy() *OutputStrategy {
+	o := &OutputStrategy{}
+	o.pathWriters = make(map[string]*bytes.Buffer)
+	return o
+}
+
 func (o *OutputStrategy) WriterForPath(path string) io.Writer {
 	if writer, ok := o.pathWriters[path]; ok {
 		return writer
@@ -136,7 +142,7 @@ func main() {
 		path := flag.Arg(i)
 
 		testFuncVisitor := NewTestFuncVisitor(visitAction)
-		output := &OutputStrategy{}
+		output := NewOutputStrategy()
 
 		switch dir, err := os.Stat(path); {
 		case err != nil:
@@ -180,7 +186,30 @@ func report(err error) {
 	exitCode = 2
 }
 
+func onlyTestFileAndDirFilter(info os.FileInfo) bool {
+	if info.IsDir() {
+		return false
+	}
+	if strings.HasSuffix(info.Name(), "_test") {
+		return false
+	}
+	return true
+}
+
 func walkDir(path string, output *OutputStrategy, visitor ast.Visitor) error {
+	fileSet := token.NewFileSet()
+	packages, err := parser.ParseDir(fileSet, path, onlyTestFileAndDirFilter, parser.ParseComments)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Packages: %+#v\n", packages)
+	for _, pkg := range packages {
+		for path, file := range pkg.Files {
+			writer := output.WriterForPath(path)
+			ast.Walk(visitor, file)
+			printer.Fprint(writer, fileSet, file)
+		}
+	}
 	return nil
 }
 
