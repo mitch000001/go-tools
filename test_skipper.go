@@ -78,6 +78,39 @@ func UnskipTestVisitorAction(f *ast.FuncDecl) {
 	}
 }
 
+type OutputStrategy struct {
+	pathWriters map[string]*bytes.Buffer
+}
+
+func (o *OutputStrategy) WriterForPath(path string) io.Writer {
+	if writer, ok := o.pathWriters[path]; ok {
+		return writer
+	}
+	var writer bytes.Buffer
+	o.pathWriters[path] = &writer
+	return &writer
+}
+
+func (o *OutputStrategy) WriteToFile() error {
+	for path, buffer := range o.pathWriters {
+		err := ioutil.WriteFile(path, buffer.Bytes(), 0)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (o *OutputStrategy) WriteToStdout() error {
+	for _, buffer := range o.pathWriters {
+		_, err := io.Copy(os.Stdout, buffer)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func usage() {
 	fmt.Fprintf(os.Stderr, "usage: test_skipper [flags] [path ...]\n")
 	flag.PrintDefaults()
@@ -95,29 +128,31 @@ func main() {
 		visitAction = SkipTestVisitorAction
 	}
 
+	if flag.NArg() == 0 {
+		flag.Usage()
+	}
+
 	for i := 0; i < flag.NArg(); i++ {
 		path := flag.Arg(i)
+
+		testFuncVisitor := NewTestFuncVisitor(visitAction)
+		output := &OutputStrategy{}
+
 		switch dir, err := os.Stat(path); {
 		case err != nil:
 			report(err)
 		case dir.IsDir():
-			walkDir(path)
+			if err := walkDir(path, output, testFuncVisitor); err != nil {
+				report(err)
+			}
 		default:
-			var buffer bytes.Buffer
-			testFuncVisitor := NewTestFuncVisitor(visitAction)
-			if err := walkFile(path, &buffer, testFuncVisitor); err != nil {
+			writer := output.WriterForPath(path)
+			if err := walkFile(path, writer, testFuncVisitor); err != nil {
 				report(err)
 			} else {
-				if *write {
-					err = ioutil.WriteFile(path, buffer.Bytes(), 0)
-					if err != nil {
-						report(err)
-					}
-				} else {
-					_, err = io.Copy(os.Stdout, &buffer)
-					if err != nil {
-						report(err)
-					}
+				err := writeOutput(output)
+				if err != nil {
+					report(err)
 				}
 			}
 		}
@@ -125,12 +160,29 @@ func main() {
 	os.Exit(exitCode)
 }
 
+func writeOutput(output *OutputStrategy) error {
+	if *write {
+		err := output.WriteToFile()
+		if err != nil {
+			return err
+		}
+	} else {
+		err := output.WriteToStdout()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func report(err error) {
 	scanner.PrintError(os.Stderr, err)
 	exitCode = 2
 }
 
-func walkDir(path string) {}
+func walkDir(path string, output *OutputStrategy, visitor ast.Visitor) error {
+	return nil
+}
 
 func walkFile(path string, output io.Writer, visitor ast.Visitor) error {
 	fileSet := token.NewFileSet()
