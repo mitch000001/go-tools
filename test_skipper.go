@@ -10,7 +10,6 @@ import (
 	"go/scanner"
 	"go/token"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 )
@@ -21,11 +20,11 @@ var (
 	exitCode = 0
 )
 
-type TestFuncVisitor struct {
+type testFuncVisitor struct {
 	visitAction func(*ast.FuncDecl)
 }
 
-func (f TestFuncVisitor) Visit(node ast.Node) ast.Visitor {
+func (f testFuncVisitor) Visit(node ast.Node) ast.Visitor {
 	if funcDecl, ok := node.(*ast.FuncDecl); ok {
 		if strings.HasPrefix(funcDecl.Name.Name, "Test") {
 			if len(funcDecl.Type.Params.List) == 1 {
@@ -46,10 +45,10 @@ func NewTestFuncVisitor(visitAction func(*ast.FuncDecl)) ast.Visitor {
 	if visitAction == nil {
 		visitAction = func(*ast.FuncDecl) {}
 	}
-	return &TestFuncVisitor{visitAction: visitAction}
+	return &testFuncVisitor{visitAction: visitAction}
 }
 
-func SkipTestVisitorAction(f *ast.FuncDecl) {
+func skipTestVisitorAction(f *ast.FuncDecl) {
 	testingParamName := f.Type.Params.List[0].Names[0].Name
 	skipTestString := fmt.Sprintf("%s.Skip();", testingParamName)
 	skipTestExpr, err := parser.ParseExpr(skipTestString)
@@ -64,7 +63,7 @@ func SkipTestVisitorAction(f *ast.FuncDecl) {
 	f.Body.List = newBodyList
 }
 
-func UnskipTestVisitorAction(f *ast.FuncDecl) {
+func unskipTestVisitorAction(f *ast.FuncDecl) {
 	testingParamName := f.Type.Params.List[0].Names[0].Name
 	skipTestString := fmt.Sprintf("%s.Skip()", testingParamName)
 	var buffer bytes.Buffer
@@ -78,17 +77,17 @@ func UnskipTestVisitorAction(f *ast.FuncDecl) {
 	}
 }
 
-type OutputStrategy struct {
+type outputStrategy struct {
 	pathWriters map[string]*bytes.Buffer
 }
 
-func NewOutputStrategy() *OutputStrategy {
-	o := &OutputStrategy{}
+func NewOutputStrategy() *outputStrategy {
+	o := &outputStrategy{}
 	o.pathWriters = make(map[string]*bytes.Buffer)
 	return o
 }
 
-func (o *OutputStrategy) WriterForPath(path string) io.Writer {
+func (o *outputStrategy) WriterForPath(path string) io.Writer {
 	if writer, ok := o.pathWriters[path]; ok {
 		return writer
 	}
@@ -97,9 +96,13 @@ func (o *OutputStrategy) WriterForPath(path string) io.Writer {
 	return &writer
 }
 
-func (o *OutputStrategy) WriteToFile() error {
+func (o *outputStrategy) WriteToFile() error {
 	for path, buffer := range o.pathWriters {
-		err := ioutil.WriteFile(path, buffer.Bytes(), 0)
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0666)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(file, buffer)
 		if err != nil {
 			return err
 		}
@@ -107,7 +110,7 @@ func (o *OutputStrategy) WriteToFile() error {
 	return nil
 }
 
-func (o *OutputStrategy) WriteToStdout() error {
+func (o *outputStrategy) WriteToStdout() error {
 	for _, buffer := range o.pathWriters {
 		_, err := io.Copy(os.Stdout, buffer)
 		if err != nil {
@@ -129,9 +132,9 @@ func main() {
 
 	var visitAction func(*ast.FuncDecl)
 	if *unskip {
-		visitAction = UnskipTestVisitorAction
+		visitAction = unskipTestVisitorAction
 	} else {
-		visitAction = SkipTestVisitorAction
+		visitAction = skipTestVisitorAction
 	}
 
 	if flag.NArg() == 0 {
@@ -166,7 +169,7 @@ func main() {
 	os.Exit(exitCode)
 }
 
-func writeOutput(output *OutputStrategy) error {
+func writeOutput(output *outputStrategy) error {
 	if *write {
 		err := output.WriteToFile()
 		if err != nil {
@@ -196,7 +199,7 @@ func onlyTestFileAndDirFilter(info os.FileInfo) bool {
 	return true
 }
 
-func walkDir(path string, output *OutputStrategy, visitor ast.Visitor) error {
+func walkDir(path string, output *outputStrategy, visitor ast.Visitor) error {
 	fileSet := token.NewFileSet()
 	packages, err := parser.ParseDir(fileSet, path, onlyTestFileAndDirFilter, parser.ParseComments)
 	if err != nil {

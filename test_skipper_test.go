@@ -34,7 +34,7 @@ func TestTestFuncVisitor(t *testing.T) {
 		printer.Fprint(&buffer, fileSet, f)
 	}
 
-	ast.Walk(TestFuncVisitor{visitAction: visitAction}, file)
+	ast.Walk(&testFuncVisitor{visitAction: visitAction}, file)
 
 	expected := "func Test(*testing.T) {}"
 	actual := strings.Replace(strings.Trim(buffer.String(), " \t\n"), "\t", " ", -1)
@@ -48,7 +48,7 @@ func TestNewTestFuncVisitor(t *testing.T) {
 	// With no visitAction func
 	visitor := NewTestFuncVisitor(nil)
 
-	if visitor.(*TestFuncVisitor).visitAction == nil {
+	if visitor.(*testFuncVisitor).visitAction == nil {
 		t.Fatalf("Expected visitAction to not be nil")
 	}
 
@@ -58,7 +58,7 @@ func TestNewTestFuncVisitor(t *testing.T) {
 	}
 
 	visitor = NewTestFuncVisitor(visitAction)
-	visitor.(*TestFuncVisitor).visitAction(&ast.FuncDecl{})
+	visitor.(*testFuncVisitor).visitAction(&ast.FuncDecl{})
 
 	if actual != "called" {
 		t.Fatal("Expected visitAction to be set properly")
@@ -88,7 +88,7 @@ func TestSkipTestVisitorAction(t *testing.T) {
 		}
 	}
 
-	SkipTestVisitorAction(funcDecl)
+	skipTestVisitorAction(funcDecl)
 
 	var buffer bytes.Buffer
 	printer.Fprint(&buffer, fileSet, file)
@@ -139,7 +139,7 @@ func TestUnskipTestVisitorAction(t *testing.T) {
 		}
 	}
 
-	UnskipTestVisitorAction(funcDecl)
+	unskipTestVisitorAction(funcDecl)
 
 	var buffer bytes.Buffer
 	printer.Fprint(&buffer, fileSet, file)
