@@ -48,9 +48,11 @@ func NewTestFuncVisitor(visitAction func(*ast.FuncDecl)) ast.Visitor {
 	return &testFuncVisitor{visitAction: visitAction}
 }
 
+const skipTestStatementTemplate = "%s.Skip()"
+
 func skipTestVisitorAction(f *ast.FuncDecl) {
 	testingParamName := f.Type.Params.List[0].Names[0].Name
-	skipTestString := fmt.Sprintf("%s.Skip();", testingParamName)
+	skipTestString := fmt.Sprintf(skipTestStatementTemplate, testingParamName)
 	skipTestExpr, err := parser.ParseExpr(skipTestString)
 	if err != nil {
 		panic(err)
@@ -65,7 +67,7 @@ func skipTestVisitorAction(f *ast.FuncDecl) {
 
 func unskipTestVisitorAction(f *ast.FuncDecl) {
 	testingParamName := f.Type.Params.List[0].Names[0].Name
-	skipTestString := fmt.Sprintf("%s.Skip()", testingParamName)
+	skipTestString := fmt.Sprintf(skipTestStatementTemplate, testingParamName)
 	var buffer bytes.Buffer
 	printer.Fprint(&buffer, token.NewFileSet(), f.Body.List[0])
 	if buffer.String() == skipTestString {
@@ -77,27 +79,23 @@ func unskipTestVisitorAction(f *ast.FuncDecl) {
 	}
 }
 
-type outputStrategy struct {
-	pathWriters map[string]*bytes.Buffer
-}
+type pathWriter map[string]*bytes.Buffer
 
-func NewOutputStrategy() *outputStrategy {
-	o := &outputStrategy{}
-	o.pathWriters = make(map[string]*bytes.Buffer)
-	return o
-}
-
-func (o *outputStrategy) WriterForPath(path string) io.Writer {
-	if writer, ok := o.pathWriters[path]; ok {
+func (p pathWriter) WriterForPath(path string) io.Writer {
+	if writer, ok := p[path]; ok {
 		return writer
 	}
 	var writer bytes.Buffer
-	o.pathWriters[path] = &writer
+	p[path] = &writer
 	return &writer
 }
 
+type outputStrategy struct {
+	PathWriter pathWriter
+}
+
 func (o *outputStrategy) WriteToFile() error {
-	for path, buffer := range o.pathWriters {
+	for path, buffer := range o.PathWriter {
 		file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0666)
 		if err != nil {
 			return err
@@ -111,7 +109,7 @@ func (o *outputStrategy) WriteToFile() error {
 }
 
 func (o *outputStrategy) WriteToStdout() error {
-	for _, buffer := range o.pathWriters {
+	for _, buffer := range o.PathWriter {
 		_, err := io.Copy(os.Stdout, buffer)
 		if err != nil {
 			return err
@@ -145,17 +143,19 @@ func main() {
 		path := flag.Arg(i)
 
 		testFuncVisitor := NewTestFuncVisitor(visitAction)
-		output := NewOutputStrategy()
+
+		pathWriter := make(pathWriter)
+		output := &outputStrategy{pathWriter}
 
 		switch dir, err := os.Stat(path); {
 		case err != nil:
 			report(err)
 		case dir.IsDir():
-			if err := walkDir(path, output, testFuncVisitor); err != nil {
+			if err := walkDir(path, pathWriter, testFuncVisitor); err != nil {
 				report(err)
 			}
 		default:
-			writer := output.WriterForPath(path)
+			writer := pathWriter.WriterForPath(path)
 			if err := walkFile(path, writer, testFuncVisitor); err != nil {
 				report(err)
 			} else {
@@ -199,16 +199,15 @@ func onlyTestFileAndDirFilter(info os.FileInfo) bool {
 	return true
 }
 
-func walkDir(path string, output *outputStrategy, visitor ast.Visitor) error {
+func walkDir(path string, pathWriter pathWriter, visitor ast.Visitor) error {
 	fileSet := token.NewFileSet()
 	packages, err := parser.ParseDir(fileSet, path, onlyTestFileAndDirFilter, parser.ParseComments)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Packages: %+#v\n", packages)
 	for _, pkg := range packages {
 		for path, file := range pkg.Files {
-			writer := output.WriterForPath(path)
+			writer := pathWriter.WriterForPath(path)
 			ast.Walk(visitor, file)
 			printer.Fprint(writer, fileSet, file)
 		}
