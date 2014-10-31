@@ -1,4 +1,4 @@
-package main
+package testskipper
 
 import (
 	"bytes"
@@ -88,7 +88,7 @@ func TestSkipTestVisitorAction(t *testing.T) {
 		}
 	}
 
-	skipTestVisitorAction(funcDecl)
+	SkipTestVisitorAction(funcDecl)
 
 	var buffer bytes.Buffer
 	printer.Fprint(&buffer, fileSet, file)
@@ -139,7 +139,7 @@ func TestUnskipTestVisitorAction(t *testing.T) {
 		}
 	}
 
-	unskipTestVisitorAction(funcDecl)
+	UnskipTestVisitorAction(funcDecl)
 
 	var buffer bytes.Buffer
 	printer.Fprint(&buffer, fileSet, file)
@@ -173,14 +173,14 @@ func TestOutputStrategyWriteToFile(t *testing.T) {
 	defer os.Remove(path)
 	content := "foo"
 
-	pWriter := make(pathWriter)
+	pWriter := make(PathWriter)
 	writer := pWriter.WriterForPath(path)
 	_, err = writer.Write([]byte(content))
 	if err != nil {
 		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
 	}
 
-	strategy := &outputStrategy{pWriter}
+	strategy := &OutputStrategy{pWriter}
 	err = strategy.WriteToFile()
 
 	if err != nil {
@@ -218,7 +218,7 @@ func TestOutputStrategyWriteToStdout(t *testing.T) {
 	path := "/tmp/bar"
 	content := "foo"
 
-	pWriter := make(pathWriter)
+	pWriter := make(PathWriter)
 	writer := pWriter.WriterForPath(path)
 	_, err := writer.Write([]byte(content))
 	if err != nil {
@@ -231,7 +231,7 @@ func TestOutputStrategyWriteToStdout(t *testing.T) {
 	r, w, err := os.Pipe()
 	os.Stdout = w
 
-	strategy := &outputStrategy{pWriter}
+	strategy := &OutputStrategy{pWriter}
 	err = strategy.WriteToStdout()
 
 	if err != nil {
@@ -280,7 +280,7 @@ func TestWalkFile(t *testing.T) {
 
 	var buffer bytes.Buffer
 
-	err = walkFile(tmpFilePath, &buffer, &visitor{})
+	err = WalkFile(tmpFilePath, &buffer, &visitor{})
 
 	if err != nil {
 		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
@@ -305,7 +305,7 @@ func TestWalkFile(t *testing.T) {
 
 	// No real path
 	buffer.Reset()
-	err = walkFile("foobar.go", &buffer, &visitor{})
+	err = WalkFile("foobar.go", &buffer, &visitor{})
 	if err == nil {
 		t.Fatal("Expected an error")
 	}
@@ -345,9 +345,9 @@ func TestWalkDir(t *testing.T) {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	pWriter := make(pathWriter)
+	pWriter := make(PathWriter)
 
-	err = walkDir(tmpDir, pWriter, &visitor{})
+	err = WalkDir(tmpDir, pWriter, &visitor{})
 
 	if err != nil {
 		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
@@ -384,8 +384,8 @@ func TestWalkDir(t *testing.T) {
 	}
 
 	// No real path
-	pWriter = make(pathWriter)
-	err = walkDir("foobar", pWriter, &visitor{})
+	pWriter = make(PathWriter)
+	err = WalkDir("foobar", pWriter, &visitor{})
 	if err == nil {
 		t.Fatal("Expected an error")
 	}

@@ -1,23 +1,15 @@
-package main
+package testskipper
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/printer"
-	"go/scanner"
 	"go/token"
 	"io"
 	"os"
 	"strings"
-)
-
-var (
-	write    = flag.Bool("w", false, "write result to (source) file instead of stdout")
-	unskip   = flag.Bool("u", false, "unskips all skipped tests instead of skipping them")
-	exitCode = 0
 )
 
 type testFuncVisitor struct {
@@ -50,7 +42,7 @@ func NewTestFuncVisitor(visitAction func(*ast.FuncDecl)) ast.Visitor {
 
 const skipTestStatementTemplate = "%s.Skip()"
 
-func skipTestVisitorAction(f *ast.FuncDecl) {
+func SkipTestVisitorAction(f *ast.FuncDecl) {
 	testingParamName := f.Type.Params.List[0].Names[0].Name
 	skipTestString := fmt.Sprintf(skipTestStatementTemplate, testingParamName)
 	skipTestExpr, err := parser.ParseExpr(skipTestString)
@@ -65,7 +57,7 @@ func skipTestVisitorAction(f *ast.FuncDecl) {
 	f.Body.List = newBodyList
 }
 
-func unskipTestVisitorAction(f *ast.FuncDecl) {
+func UnskipTestVisitorAction(f *ast.FuncDecl) {
 	testingParamName := f.Type.Params.List[0].Names[0].Name
 	skipTestString := fmt.Sprintf(skipTestStatementTemplate, testingParamName)
 	var buffer bytes.Buffer
@@ -79,9 +71,9 @@ func unskipTestVisitorAction(f *ast.FuncDecl) {
 	}
 }
 
-type pathWriter map[string]*bytes.Buffer
+type PathWriter map[string]*bytes.Buffer
 
-func (p pathWriter) WriterForPath(path string) io.Writer {
+func (p PathWriter) WriterForPath(path string) io.Writer {
 	if writer, ok := p[path]; ok {
 		return writer
 	}
@@ -90,11 +82,11 @@ func (p pathWriter) WriterForPath(path string) io.Writer {
 	return &writer
 }
 
-type outputStrategy struct {
-	PathWriter pathWriter
+type OutputStrategy struct {
+	PathWriter PathWriter
 }
 
-func (o *outputStrategy) WriteToFile() error {
+func (o *OutputStrategy) WriteToFile() error {
 	for path, buffer := range o.PathWriter {
 		file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0666)
 		if err != nil {
@@ -108,7 +100,7 @@ func (o *outputStrategy) WriteToFile() error {
 	return nil
 }
 
-func (o *outputStrategy) WriteToStdout() error {
+func (o *OutputStrategy) WriteToStdout() error {
 	for _, buffer := range o.PathWriter {
 		_, err := io.Copy(os.Stdout, buffer)
 		if err != nil {
@@ -116,77 +108,6 @@ func (o *outputStrategy) WriteToStdout() error {
 		}
 	}
 	return nil
-}
-
-func usage() {
-	fmt.Fprintf(os.Stderr, "usage: test_skipper [flags] [path ...]\n")
-	flag.PrintDefaults()
-	os.Exit(2)
-}
-
-func main() {
-	flag.Usage = usage
-	flag.Parse()
-
-	var visitAction func(*ast.FuncDecl)
-	if *unskip {
-		visitAction = unskipTestVisitorAction
-	} else {
-		visitAction = skipTestVisitorAction
-	}
-
-	if flag.NArg() == 0 {
-		flag.Usage()
-	}
-
-	for i := 0; i < flag.NArg(); i++ {
-		path := flag.Arg(i)
-
-		testFuncVisitor := NewTestFuncVisitor(visitAction)
-
-		pathWriter := make(pathWriter)
-		output := &outputStrategy{pathWriter}
-
-		switch dir, err := os.Stat(path); {
-		case err != nil:
-			report(err)
-		case dir.IsDir():
-			if err := walkDir(path, pathWriter, testFuncVisitor); err != nil {
-				report(err)
-			}
-		default:
-			writer := pathWriter.WriterForPath(path)
-			if err := walkFile(path, writer, testFuncVisitor); err != nil {
-				report(err)
-			} else {
-				err := writeOutput(output)
-				if err != nil {
-					report(err)
-				}
-			}
-		}
-	}
-	os.Exit(exitCode)
-}
-
-func writeOutput(output *outputStrategy) error {
-	if *write {
-		err := output.WriteToFile()
-		if err != nil {
-			return err
-		}
-	} else {
-		err := output.WriteToStdout()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func report(err error) {
-	scanner.PrintError(os.Stderr, err)
-	exitCode = 2
 }
 
 func onlyTestFileAndDirFilter(info os.FileInfo) bool {
@@ -199,7 +120,7 @@ func onlyTestFileAndDirFilter(info os.FileInfo) bool {
 	return true
 }
 
-func walkDir(path string, pathWriter pathWriter, visitor ast.Visitor) error {
+func WalkDir(path string, pathWriter PathWriter, visitor ast.Visitor) error {
 	fileSet := token.NewFileSet()
 	packages, err := parser.ParseDir(fileSet, path, onlyTestFileAndDirFilter, parser.ParseComments)
 	if err != nil {
@@ -215,7 +136,7 @@ func walkDir(path string, pathWriter pathWriter, visitor ast.Visitor) error {
 	return nil
 }
 
-func walkFile(path string, output io.Writer, visitor ast.Visitor) error {
+func WalkFile(path string, output io.Writer, visitor ast.Visitor) error {
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, path, nil, parser.ParseComments)
 	if err != nil {
