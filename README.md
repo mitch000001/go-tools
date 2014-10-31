@@ -8,5 +8,7 @@ Includes at the moment:
 
 ## test_skipper
 To get and build the binary:
-`go get github.com/mitch000001/go-tools/cmd/gotestskipper`
+```bash
+$ go get github.com/mitch000001/go-tools/cmd/gotestskipper
+```
 
