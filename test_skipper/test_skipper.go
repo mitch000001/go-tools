@@ -73,41 +73,13 @@ func UnskipTestVisitorAction(f *ast.FuncDecl) {
 
 type PathWriter map[string]*bytes.Buffer
 
-func (p PathWriter) WriterForPath(path string) io.Writer {
+func (p PathWriter) ReadWriterForPath(path string) io.ReadWriter {
 	if writer, ok := p[path]; ok {
 		return writer
 	}
 	var writer bytes.Buffer
 	p[path] = &writer
 	return &writer
-}
-
-type OutputStrategy struct {
-	PathWriter PathWriter
-}
-
-func (o *OutputStrategy) WriteToFile() error {
-	for path, buffer := range o.PathWriter {
-		file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0666)
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(file, buffer)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (o *OutputStrategy) WriteToStdout() error {
-	for _, buffer := range o.PathWriter {
-		_, err := io.Copy(os.Stdout, buffer)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func onlyTestFileAndDirFilter(info os.FileInfo) bool {
@@ -128,7 +100,7 @@ func WalkDir(path string, pathWriter PathWriter, visitor ast.Visitor) error {
 	}
 	for _, pkg := range packages {
 		for path, file := range pkg.Files {
-			writer := pathWriter.WriterForPath(path)
+			writer := pathWriter.ReadWriterForPath(path)
 			ast.Walk(visitor, file)
 			printer.Fprint(writer, fileSet, file)
 		}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/scanner"
+	"io"
 	"os"
 
 	"github.com/mitch000001/go-tools/test_skipper"
@@ -20,6 +21,34 @@ func usage() {
 	fmt.Fprintf(os.Stderr, "usage: test_skipper [flags] [path ...]\n")
 	flag.PrintDefaults()
 	os.Exit(2)
+}
+
+type OutputStrategy struct {
+	PathWriter testskipper.PathWriter
+}
+
+func (o *OutputStrategy) WriteToFile() error {
+	for path, buffer := range o.PathWriter {
+		file, err := os.OpenFile(path, os.O_WRONLY|os.O_TRUNC, 0666)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(file, buffer)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (o *OutputStrategy) WriteToStdout() error {
+	for _, buffer := range o.PathWriter {
+		_, err := io.Copy(os.Stdout, buffer)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func main() {
@@ -43,7 +72,7 @@ func main() {
 		testFuncVisitor := testskipper.NewTestFuncVisitor(visitAction)
 
 		pathWriter := make(testskipper.PathWriter)
-		output := &testskipper.OutputStrategy{pathWriter}
+		output := &OutputStrategy{pathWriter}
 
 		switch dir, err := os.Stat(path); {
 		case err != nil:
@@ -59,7 +88,7 @@ func main() {
 			}
 
 		default:
-			writer := pathWriter.WriterForPath(path)
+			writer := pathWriter.ReadWriterForPath(path)
 			if err := testskipper.WalkFile(path, writer, testFuncVisitor); err != nil {
 				report(err)
 			} else {
@@ -73,7 +102,7 @@ func main() {
 	os.Exit(exitCode)
 }
 
-func writeOutput(output *testskipper.OutputStrategy) error {
+func writeOutput(output *OutputStrategy) error {
 	if *write {
 		err := output.WriteToFile()
 		if err != nil {

@@ -163,92 +163,6 @@ func TestUnskipTestVisitorAction(t *testing.T) {
 	}
 }
 
-func TestOutputStrategyWriteToFile(t *testing.T) {
-	// Valid path
-	path := "/tmp/bar"
-	err := ioutil.WriteFile(path, []byte{}, 0700)
-	if err != nil {
-		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
-	}
-	defer os.Remove(path)
-	content := "foo"
-
-	pWriter := make(PathWriter)
-	writer := pWriter.WriterForPath(path)
-	_, err = writer.Write([]byte(content))
-	if err != nil {
-		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
-	}
-
-	strategy := &OutputStrategy{pWriter}
-	err = strategy.WriteToFile()
-
-	if err != nil {
-		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
-	}
-
-	fileContent, err := ioutil.ReadFile(path)
-	if err != nil {
-		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
-	}
-	fileContentString := string(fileContent)
-
-	if fileContentString != content {
-		t.Fatalf("Expected fileContent '%s', got '%s'\n", content, fileContentString)
-	}
-
-	// Invalid path
-	path = "/tmp/invalid"
-	writer = pWriter.WriterForPath(path)
-	_, err = writer.Write([]byte(content))
-	if err != nil {
-		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
-	}
-	err = strategy.WriteToFile()
-	if err == nil {
-		t.Fatalf("Expected error, got nil")
-	}
-
-	if _, ok := err.(*os.PathError); !ok {
-		t.Fatalf("Expected '*os.PathError', got '%T' with message: '%s'", err, err.Error())
-	}
-}
-
-func TestOutputStrategyWriteToStdout(t *testing.T) {
-	path := "/tmp/bar"
-	content := "foo"
-
-	pWriter := make(PathWriter)
-	writer := pWriter.WriterForPath(path)
-	_, err := writer.Write([]byte(content))
-	if err != nil {
-		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
-	}
-	realStdout := os.Stdout
-	defer func() {
-		os.Stdout = realStdout
-	}()
-	r, w, err := os.Pipe()
-	os.Stdout = w
-
-	strategy := &OutputStrategy{pWriter}
-	err = strategy.WriteToStdout()
-
-	if err != nil {
-		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
-	}
-
-	buffer := make([]byte, len(content))
-	_, err = r.Read(buffer)
-	if err != nil {
-		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
-	}
-	printedString := string(buffer)
-	if printedString != content {
-		t.Fatalf("Expected output '%s', got '%s'\n", content, printedString)
-	}
-}
-
 type visitor struct{}
 
 func (v visitor) Visit(node ast.Node) ast.Visitor {
@@ -331,7 +245,7 @@ func TestWalkDir(t *testing.T) {
 		fmt.Println(s)
 	}`
 
-	tmpDir := "/tmp"
+	tmpDir := "/tmp/gotestskipper"
 	tmpFilePath := "tempFile.go"
 	tmpFilePath2 := "tempFile2.go"
 	err := os.Mkdir(tmpDir, 0777)
@@ -343,7 +257,12 @@ func TestWalkDir(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() {
+		err = os.RemoveAll(tmpDir)
+		if err != nil {
+			panic(err)
+		}
+	}()
 
 	pWriter := make(PathWriter)
 
