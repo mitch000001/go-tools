@@ -51,7 +51,13 @@ func main() {
 		case dir.IsDir():
 			if err := testskipper.WalkDir(path, pathWriter, testFuncVisitor); err != nil {
 				report(err)
+			} else {
+				err := writeOutput(output)
+				if err != nil {
+					report(err)
+				}
 			}
+
 		default:
 			writer := pathWriter.WriterForPath(path)
 			if err := testskipper.WalkFile(path, writer, testFuncVisitor); err != nil {
