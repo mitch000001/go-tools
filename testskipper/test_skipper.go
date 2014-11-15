@@ -13,7 +13,7 @@ import (
 )
 
 type testFuncVisitor struct {
-	visitAction func(*ast.FuncDecl)
+	visitAction FuncVisitAction
 }
 
 func (f testFuncVisitor) Visit(node ast.Node) ast.Visitor {
@@ -33,15 +33,24 @@ func (f testFuncVisitor) Visit(node ast.Node) ast.Visitor {
 	return f
 }
 
-func NewTestFuncVisitor(visitAction func(*ast.FuncDecl)) ast.Visitor {
-	if visitAction == nil {
-		visitAction = func(*ast.FuncDecl) {}
-	}
+type FuncVisitAction func(*ast.FuncDecl)
+
+// NewTestFuncVisitor returns an ast.Visitor which performs the action
+// specified in visitAction
+//
+// The visitor will only call the visitAction on test function declarations
+func NewTestFuncVisitor(visitAction FuncVisitAction) ast.Visitor {
 	return &testFuncVisitor{visitAction: visitAction}
 }
 
 const skipTestStatementTemplate = "%s.Skip()"
 
+// SkipTestVisitorAction defines a visitAction which adds a
+//  t.Skip()
+// statement to the test function
+//
+// It is garanteed that the *ast.FuncDecl is a testing function with the
+// signature func TestXXX(*testing.T)
 func SkipTestVisitorAction(f *ast.FuncDecl) {
 	testingParamName := f.Type.Params.List[0].Names[0].Name
 	skipTestString := fmt.Sprintf(skipTestStatementTemplate, testingParamName)
@@ -57,6 +66,12 @@ func SkipTestVisitorAction(f *ast.FuncDecl) {
 	f.Body.List = newBodyList
 }
 
+// UnSkipTestVisitorAction defines a visitAction which removes a
+//  t.Skip()
+// statement from the test function if given at first line of the func body
+//
+// It is garanteed that the *ast.FuncDecl is a testing function with the
+// signature func TestXXX(*testing.T)
 func UnskipTestVisitorAction(f *ast.FuncDecl) {
 	testingParamName := f.Type.Params.List[0].Names[0].Name
 	skipTestString := fmt.Sprintf(skipTestStatementTemplate, testingParamName)
@@ -71,8 +86,12 @@ func UnskipTestVisitorAction(f *ast.FuncDecl) {
 	}
 }
 
+// PathWriter provides a mapping of paths to buffers
 type PathWriter map[string]*bytes.Buffer
 
+// ReadWriterForPath returns an io.ReadWriter for the provided path
+// If there is already an entry for path, the io.ReadWriter associated
+// to that path will be returned, otherwise an empty io.ReadWriter is returned
 func (p PathWriter) ReadWriterForPath(path string) io.ReadWriter {
 	if writer, ok := p[path]; ok {
 		return writer
@@ -92,6 +111,8 @@ func onlyTestFileAndDirFilter(info os.FileInfo) bool {
 	return true
 }
 
+// WalkDir applies the visitor to all files found at path and writes the visited
+// AST into pathWriter.
 func WalkDir(path string, pathWriter PathWriter, visitor ast.Visitor) error {
 	fileSet := token.NewFileSet()
 	packages, err := parser.ParseDir(fileSet, path, onlyTestFileAndDirFilter, parser.ParseComments)
@@ -108,6 +129,8 @@ func WalkDir(path string, pathWriter PathWriter, visitor ast.Visitor) error {
 	return nil
 }
 
+// WalkFile applies the visitor to the file found at path and writes the visited
+// AST into output.
 func WalkFile(path string, output io.Writer, visitor ast.Visitor) error {
 	fileSet := token.NewFileSet()
 	file, err := parser.ParseFile(fileSet, path, nil, parser.ParseComments)

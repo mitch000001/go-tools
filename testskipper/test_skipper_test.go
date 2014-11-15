@@ -45,19 +45,12 @@ func TestTestFuncVisitor(t *testing.T) {
 }
 
 func TestNewTestFuncVisitor(t *testing.T) {
-	// With no visitAction func
-	visitor := NewTestFuncVisitor(nil)
-
-	if visitor.(*testFuncVisitor).visitAction == nil {
-		t.Fatalf("Expected visitAction to not be nil")
-	}
-
 	var actual string
 	visitAction := func(*ast.FuncDecl) {
 		actual = "called"
 	}
 
-	visitor = NewTestFuncVisitor(visitAction)
+	visitor := NewTestFuncVisitor(visitAction)
 	visitor.(*testFuncVisitor).visitAction(&ast.FuncDecl{})
 
 	if actual != "called" {
@@ -163,9 +156,9 @@ func TestUnskipTestVisitorAction(t *testing.T) {
 	}
 }
 
-type visitor struct{}
+type testVisitor struct{}
 
-func (v visitor) Visit(node ast.Node) ast.Visitor {
+func (v testVisitor) Visit(node ast.Node) ast.Visitor {
 	if f, ok := node.(*ast.FuncDecl); ok {
 		name := ast.NewIdent("TestBar")
 		f.Name = name
@@ -194,7 +187,7 @@ func TestWalkFile(t *testing.T) {
 
 	var buffer bytes.Buffer
 
-	err = WalkFile(tmpFilePath, &buffer, &visitor{})
+	err = WalkFile(tmpFilePath, &buffer, &testVisitor{})
 
 	if err != nil {
 		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
@@ -219,7 +212,7 @@ func TestWalkFile(t *testing.T) {
 
 	// No real path
 	buffer.Reset()
-	err = WalkFile("foobar.go", &buffer, &visitor{})
+	err = WalkFile("foobar.go", &buffer, &testVisitor{})
 	if err == nil {
 		t.Fatal("Expected an error")
 	}
@@ -266,7 +259,7 @@ func TestWalkDir(t *testing.T) {
 
 	pWriter := make(PathWriter)
 
-	err = WalkDir(tmpDir, pWriter, &visitor{})
+	err = WalkDir(tmpDir, pWriter, &testVisitor{})
 
 	if err != nil {
 		t.Fatalf("Expected no error, got '%T' with message: '%s'\n", err, err.Error())
@@ -304,7 +297,7 @@ func TestWalkDir(t *testing.T) {
 
 	// No real path
 	pWriter = make(PathWriter)
-	err = WalkDir("foobar", pWriter, &visitor{})
+	err = WalkDir("foobar", pWriter, &testVisitor{})
 	if err == nil {
 		t.Fatal("Expected an error")
 	}
