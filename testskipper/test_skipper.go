@@ -87,7 +87,7 @@ func UnskipTestVisitorAction(f *ast.FuncDecl) {
 }
 
 // PathWriter provides a mapping of paths to buffers
-type PathWriter map[string]*bytes.Buffer
+type PathWriter map[string]io.ReadWriter
 
 // ReadWriterForPath returns an io.ReadWriter for the provided path
 // If there is already an entry for path, the io.ReadWriter associated

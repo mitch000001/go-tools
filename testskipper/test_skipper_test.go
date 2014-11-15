@@ -268,8 +268,9 @@ func TestWalkDir(t *testing.T) {
 	replacer := strings.NewReplacer("\n", "", "\t", "", " ", "")
 
 	var actual string
-	for _, buffer := range pWriter {
-		actual = actual + replacer.Replace(buffer.String())
+	for _, reader := range pWriter {
+		bytes, _ := ioutil.ReadAll(reader)
+		actual = actual + replacer.Replace(string(bytes))
 	}
 
 	expected := `
