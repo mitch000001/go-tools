@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/mitch000001/go-tools/test_skipper"
+	"github.com/mitch000001/go-tools/testskipper"
 )
 
 var (
