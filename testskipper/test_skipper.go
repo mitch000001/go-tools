@@ -10,20 +10,29 @@ import (
 	"io"
 	"os"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
+
+const defaultTestImport string = "testing"
+const testImportTemplate string = "*%s.T"
 
 type testFuncVisitor struct {
 	visitAction FuncVisitAction
+	testImport  string
 }
 
 func (f testFuncVisitor) Visit(node ast.Node) ast.Visitor {
 	if funcDecl, ok := node.(*ast.FuncDecl); ok {
-		if strings.HasPrefix(funcDecl.Name.Name, "Test") {
+		if funcDecl.Recv != nil {
+			return nil
+		}
+		if isTest(funcDecl.Name.Name, "Test") {
 			if len(funcDecl.Type.Params.List) == 1 {
 				param := funcDecl.Type.Params.List[0]
 				var buffer bytes.Buffer
 				printer.Fprint(&buffer, token.NewFileSet(), param.Type)
-				if "*testing.T" == buffer.String() {
+				if fmt.Sprintf(testImportTemplate, f.testImport) == buffer.String() {
 					f.visitAction(funcDecl)
 					return nil
 				}
@@ -33,6 +42,24 @@ func (f testFuncVisitor) Visit(node ast.Node) ast.Visitor {
 	return f
 }
 
+func (f *testFuncVisitor) SetTestImport(testImport string) {
+	f.testImport = testImport
+}
+
+// isTest tells whether name looks like a test (or benchmark, according to prefix).
+// It is a Test (say) if there is a character after Test that is not a lower-case letter.
+// We don't want TesticularCancer.
+func isTest(name, prefix string) bool {
+	if !strings.HasPrefix(name, prefix) {
+		return false
+	}
+	if len(name) == len(prefix) { // "Test" is ok
+		return true
+	}
+	rune, _ := utf8.DecodeRuneInString(name[len(prefix):])
+	return !unicode.IsLower(rune)
+}
+
 type FuncVisitAction func(*ast.FuncDecl)
 
 // NewTestFuncVisitor returns an ast.Visitor which performs the action
@@ -40,7 +67,10 @@ type FuncVisitAction func(*ast.FuncDecl)
 //
 // The visitor will only call the visitAction on test function declarations
 func NewTestFuncVisitor(visitAction FuncVisitAction) ast.Visitor {
-	return &testFuncVisitor{visitAction: visitAction}
+	return &testFuncVisitor{
+		visitAction: visitAction,
+		testImport:  defaultTestImport,
+	}
 }
 
 const skipTestStatementTemplate = "%s.Skip()"

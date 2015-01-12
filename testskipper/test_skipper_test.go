@@ -34,9 +34,45 @@ func TestTestFuncVisitor(t *testing.T) {
 		printer.Fprint(&buffer, fileSet, f)
 	}
 
-	ast.Walk(&testFuncVisitor{visitAction: visitAction}, file)
+	ast.Walk(&testFuncVisitor{visitAction: visitAction, testImport: defaultTestImport}, file)
 
 	expected := "func Test(*testing.T) {}"
+	actual := strings.Replace(strings.Trim(buffer.String(), " \t\n"), "\t", " ", -1)
+
+	if actual != expected {
+		t.Fatalf("Expected '%s', got '%s'\n", expected, actual)
+	}
+}
+
+func TestTestFuncVisitorSetTestImport(t *testing.T) {
+	src := `
+		package main
+
+		import foobar "testing"
+
+		func testFoo(testing.T) {}
+		func bar(*testing.T) {}
+		func TestBaz(string) {}
+		func Test(*testing.T) {}
+		func Test(*foobar.T) {}
+	`
+	fileSet := token.NewFileSet()
+	file, err := parser.ParseFile(fileSet, "", src, parser.AllErrors)
+	if err != nil {
+		t.Fatalf("Error parsing source code: `%s`", src)
+	}
+	var buffer bytes.Buffer
+	visitAction := func(f *ast.FuncDecl) {
+		printer.Fprint(&buffer, fileSet, f)
+	}
+
+	visitor := &testFuncVisitor{visitAction: visitAction, testImport: defaultTestImport}
+
+	visitor.SetTestImport("foobar")
+
+	ast.Walk(visitor, file)
+
+	expected := "func Test(*foobar.T) {}"
 	actual := strings.Replace(strings.Trim(buffer.String(), " \t\n"), "\t", " ", -1)
 
 	if actual != expected {
@@ -111,7 +147,10 @@ func TestUnskipTestVisitorAction(t *testing.T) {
 	src := `
 	package main
 
-	import "fmt"
+	import (
+		"fmt"
+		"testing"
+	)
 
 	func TestFoo(t *testing.T) {
 		t.Skip()
@@ -142,7 +181,10 @@ func TestUnskipTestVisitorAction(t *testing.T) {
 	expected := `
 	package main
 
-	import "fmt"
+	import (
+		"fmt"
+		"testing"
+	)
 
 	func TestFoo(t *testing.T) {
 		s := "foo"
@@ -150,6 +192,56 @@ func TestUnskipTestVisitorAction(t *testing.T) {
 	}`
 	expected = replacer.Replace(expected)
 	actual := replacer.Replace(buffer.String())
+
+	if expected != actual {
+		t.Fatalf("Expected \n`%s`\n\n, got \n`%s`\n", expected, actual)
+	}
+
+	// With customized testing package name
+	src = `
+	package main
+
+	import (
+		"fmt"
+		customtesting "testing"
+	)
+
+	func TestFoo(t *customtesting.T) {
+		t.Skip()
+
+		s := "foo"
+		fmt.Println(s)
+	}`
+	fileSet = token.NewFileSet()
+	file, err = parser.ParseFile(fileSet, "", src, parser.AllErrors)
+	if err != nil {
+		panic(err)
+	}
+
+	for _, decl := range file.Decls {
+		if fDecl, ok := decl.(*ast.FuncDecl); ok {
+			funcDecl = fDecl
+		}
+	}
+
+	UnskipTestVisitorAction(funcDecl)
+
+	buffer.Reset()
+	printer.Fprint(&buffer, fileSet, file)
+	expected = `
+	package main
+
+	import (
+		"fmt"
+		customtesting "testing"
+	)
+
+	func TestFoo(t *customtesting.T) {
+		s := "foo"
+		fmt.Println(s)
+	}`
+	expected = replacer.Replace(expected)
+	actual = replacer.Replace(buffer.String())
 
 	if expected != actual {
 		t.Fatalf("Expected \n`%s`\n\n, got \n`%s`\n", expected, actual)
